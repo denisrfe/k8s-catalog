@@ -14,10 +14,6 @@ spec:
     type: Recreate
   template:
     metadata:
-      annotations:
-      {{- range $key, $value := .Values.annotations }}
-        {{ $key }}: {{ $value }}
-      {{- end }}
       labels:
         io.kompose.service: check-mk
     spec:
