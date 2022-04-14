@@ -1,0 +1,146 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: check-mk
+  namespace: monitoring
+  generation: 1
+  labels:
+    k8s-app: check-mk
+spec:
+  replicas: 1
+  selector:
+        matchLabels:
+          k8s-app: check-mk
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+      labels:
+        k8s-app: check-mk
+    spec:
+      volumes:
+        - name: check-mk-pv-storage
+          persistentVolumeClaim:
+            claimName: check-mk-pv-claim
+      containers:
+      - name: check-mk
+        image: checkmk/check-mk-raw:2.0.0-latest
+        imagePullPolicy: IfNotPresent
+        volumeMounts:
+          - mountPath: "/omd/sites"
+            name: check-mk-pv-storage
+        env:
+        - name: WEBHOOK
+          value: "{{ .Values.slack.webhook }}"
+        livenessProbe:
+          failureThreshold: 3
+          initialDelaySeconds: 30
+          periodSeconds: 6
+          successThreshold: 1
+          tcpSocket:
+            port: 5000
+          timeoutSeconds: 6
+        readinessProbe:
+          failureThreshold: 3
+          initialDelaySeconds: 30
+          periodSeconds: 6
+          successThreshold: 1
+          tcpSocket:
+            port: 5000
+          timeoutSeconds: 6
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 0
+status: {}
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: check-mk-volume
+  namespace: monitoring
+  labels:
+    type: local
+spec:
+  storageClassName: manual
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/omd/sites"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: check-mk-pv-claim
+  namespace: monitoring
+spec:
+  storageClassName: manual
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 3Gi
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: check-mk
+  namespace: monitoring
+spec:
+  selector:
+    k8s-app: check-mk
+  ports:
+    - protocol: TCP
+      port: 5000
+      name: web
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: check-mk
+  namespace: monitoring
+  # annotations:
+  #   kubernetes.io/ingress.class: traefik
+spec:
+  ingressClassName: "traefik-lb"
+  rules:
+  - http:
+      paths:
+      - path: "/cmk"
+        pathType: Prefix
+        backend:
+          service: 
+            name: check-mk
+            port:
+              number: 5000
+---
+apiVersion: autoscaling/v2beta2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: check-mk
+  namespace: monitoring
+spec:
+  maxReplicas: 5
+  minReplicas: 1
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 80
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: check-mk
+
+# http://a4ce702f0807a40558a9b57be96d9a61-1947737362.us-east-1.elb.amazonaws.com/cmk/

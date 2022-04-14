@@ -5,3 +5,5 @@ secretGenerator:
 resources:
   - mysql-deployment.yaml
   - wordpress-deployment.yaml
+
+# kubectl apply -k ./
